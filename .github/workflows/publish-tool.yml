@@ -1,0 +1,67 @@
+name: publish-tool
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Optional package version override (for example 1.0.1)
+        required: false
+        type: string
+      publish_to_nuget:
+        description: Publish the generated NuGet packages to nuget.org
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  pack-and-publish:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore ./BrighterTools.Data.slnx --configfile ./NuGet.config
+
+      - name: Build
+        run: dotnet build ./BrighterTools.Data.slnx --configuration Release --no-restore
+
+      - name: Pack NuGet packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.version }}" ]; then
+            dotnet pack ./src/BrighterTools.Data.Abstractions/BrighterTools.Data.Abstractions.csproj --configuration Release --no-build --output ./artifacts/nuget --configfile ./NuGet.config /p:Version=${{ inputs.version }}
+            dotnet pack ./src/BrighterTools.Data.EFCore/BrighterTools.Data.EFCore.csproj --configuration Release --no-build --output ./artifacts/nuget --configfile ./NuGet.config /p:Version=${{ inputs.version }}
+          else
+            dotnet pack ./src/BrighterTools.Data.Abstractions/BrighterTools.Data.Abstractions.csproj --configuration Release --no-build --output ./artifacts/nuget --configfile ./NuGet.config
+            dotnet pack ./src/BrighterTools.Data.EFCore/BrighterTools.Data.EFCore.csproj --configuration Release --no-build --output ./artifacts/nuget --configfile ./NuGet.config
+          fi
+
+      - name: Upload NuGet artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: brightertools-data-nuget
+          path: ./artifacts/nuget/*
+          if-no-files-found: error
+
+      - name: NuGet login (OIDC to temp API key)
+        if: ${{ inputs.publish_to_nuget }}
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: brightertools
+
+      - name: Publish to NuGet with Trusted Publishing
+        if: ${{ inputs.publish_to_nuget }}
+        run: dotnet nuget push ./artifacts/nuget/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
