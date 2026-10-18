@@ -180,6 +180,91 @@ public abstract class BaseRepository<TEntity, TKey, TUserId> : IBaseRepository<T
     protected Task<TEntity?> GetByIdAsync(TKey id, bool tracking = false, params string[] includes)
         => BuildQuery(tracking, includes).FirstOrDefaultAsync(CreateIdEqualsPredicate(id));
 
+    protected Task<TEntity?> GetByPropertyAsync<TProperty>(
+        Expression<Func<TEntity, TProperty>> propertySelector,
+        TProperty value,
+        bool tracking = false,
+        params string[] includes)
+    {
+        var parameter = propertySelector.Parameters[0];
+        var comparison = Expression.Equal(propertySelector.Body, Expression.Constant(value, typeof(TProperty)));
+        var predicate = Expression.Lambda<Func<TEntity, bool>>(comparison, parameter);
+        return BuildQuery(tracking, includes).FirstOrDefaultAsync(predicate);
+    }
+
+    protected async Task<bool> SetPropertyByIdAsync<TProperty>(
+        TKey id,
+        Expression<Func<TEntity, TProperty>> propertySelector,
+        TProperty value,
+        TUserId? userId = null)
+    {
+        var entity = await Set.FirstOrDefaultAsync(CreateIdEqualsPredicate(id));
+        if (entity is null)
+        {
+            return false;
+        }
+
+        SetPropertyValue(entity, propertySelector, value);
+        await PersistEntityAsync(entity, userId, CancellationToken.None);
+        return true;
+    }
+
+    protected async Task<bool> SetPropertyByLookupAsync<TLookup, TProperty>(
+        Expression<Func<TEntity, TLookup>> lookupSelector,
+        TLookup lookupValue,
+        Expression<Func<TEntity, TProperty>> propertySelector,
+        TProperty value,
+        TUserId? userId = null)
+    {
+        var entity = await GetByPropertyAsync(lookupSelector, lookupValue, tracking: true);
+        if (entity is null)
+        {
+            return false;
+        }
+
+        SetPropertyValue(entity, propertySelector, value);
+        await PersistEntityAsync(entity, userId, CancellationToken.None);
+        return true;
+    }
+
+    protected async Task<bool> DeleteAsync(TKey id, bool hardDelete = false)
+    {
+        var entity = await Set.FirstOrDefaultAsync(CreateIdEqualsPredicate(id));
+        if (entity is null)
+        {
+            return false;
+        }
+
+        var deletedProperty = GetCachedProperty(typeof(TEntity), "Deleted");
+        if (!hardDelete && deletedProperty?.PropertyType == typeof(bool))
+        {
+            deletedProperty.SetValue(entity, true);
+            DbContext.Update(entity);
+        }
+        else
+        {
+            DbContext.Remove(entity);
+        }
+
+        await DbContext.SaveChangesAsync();
+        return true;
+    }
+
+    private static void SetPropertyValue<TProperty>(
+        TEntity entity,
+        Expression<Func<TEntity, TProperty>> propertySelector,
+        TProperty value)
+    {
+        if (propertySelector.Body is not MemberExpression memberExpression ||
+            memberExpression.Member is not PropertyInfo propertyInfo ||
+            !propertyInfo.CanWrite)
+        {
+            throw new InvalidOperationException("Property selector must target a writable property.");
+        }
+
+        propertyInfo.SetValue(entity, value);
+    }
+
     protected IQueryable<TEntity> ApplyStandardListFilters(IQueryable<TEntity> query, ListRequest request)
     {
         query = ApplyForeignKeyFilters(query, request.ForeignKeyFilters);

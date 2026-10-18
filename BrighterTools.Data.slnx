@@ -3,4 +3,7 @@
     <Project Path="src/BrighterTools.Data.Abstractions/BrighterTools.Data.Abstractions.csproj" />
     <Project Path="src/BrighterTools.Data.EFCore/BrighterTools.Data.EFCore.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BrighterTools.Data.EFCore.Tests/BrighterTools.Data.EFCore.Tests.csproj" />
+  </Folder>
 </Solution>
