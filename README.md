@@ -40,3 +40,6 @@ dotnet add package BrighterTools.Data.EFCore
 dotnet restore .\BrighterTools.Data.slnx --configfile .\NuGet.config
 dotnet build .\BrighterTools.Data.slnx -c Release --no-restore
 ```
+## Scoped read repositories
+
+`ScopedReadRepository<TEntity,TKey>` supports string and composite key contracts without changing existing numeric CRUD bases. Hosts supply `IReadScope<TEntity>`; derived/generated repositories supply a key-match expression. Every read applies the scope to an untracked query, including when another entity with that key is already tracked. No saves or implicit inserts occur. Compose commands in explicit host workflows using one unit of work; this API deliberately does not infer create/update intent from assigned GUIDs.
